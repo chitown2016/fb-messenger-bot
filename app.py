@@ -1,42 +1,45 @@
 from flask import Flask, request
 import json
 import requests
-from flask_sqlalchemy import SQLAlchemy
 import os
+from flask_sqlalchemy import SQLAlchemy
 import praw
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ['DATABASE_URL']
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL').replace('postgres://', 'postgresql://')
+#app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
+
 db = SQLAlchemy(app)
-reddit = praw.Reddit(client_id='*******',
-                     client_secret='***************',
-                     user_agent='my user agent')
+app.app_context().push()
+reddit = praw.Reddit(client_id='***',client_secret='***',user_agent='my user agent')
 
 # This needs to be filled with the Page Access Token that will be provided
 # by the Facebook App that will be created.
-PAT = '*********************************'
+PAT = os.environ.get('FACEBOOK_TOKEN')
 
 quick_replies_list = [{
-    "content_type":"text",
-    "title":"Meme",
+    "content_type": "text",
+    "title": "Meme",
     "payload":"meme",
 },
 {
-    "content_type":"text",
-    "title":"Motivation",
+    "content_type": "text",
+    "title": "Motivation",
     "payload":"motivation",
 },
 {
     "content_type":"text",
-    "title":"Shower Thought",
-    "payload":"Shower_Thought",
+    "title": "shower Thought",
+    "payload": "Shower_Thought",
 },
 {
     "content_type":"text",
-    "title":"Jokes",
-    "payload":"Jokes",
+    "title": "Jokes",
+    "payload": "Jokes",
 }
 ]
+
+
 @app.route('/', methods=['GET'])
 def handle_verification():
     print("Handling Verification.")
@@ -73,6 +76,7 @@ def messaging_events(payload):
 def send_message(token, recipient, text):
     """Send the message text to recipient with id recipient.
     """
+
     if b"meme" in text.lower():
         subreddit_name = "memes"
     elif b"shower" in text.lower():
@@ -87,7 +91,9 @@ def send_message(token, recipient, text):
     if subreddit_name == "Showerthoughts":
         for submission in reddit.subreddit(subreddit_name).hot(limit=None):
             if (submission.is_self == True):
-                query_result = Posts.query.filter(Posts.name == submission.id).first()
+                query_result = (
+                    Posts.query.filter(Posts.name == submission.id).first()
+                )
                 if query_result is None:
                     myPost = Posts(submission.id, submission.title)
                     myUser.posts.append(myPost)
@@ -100,21 +106,24 @@ def send_message(token, recipient, text):
                     payload = submission.title
                     break
                 else:
-                    continue  
+                    continue
 
         r = requests.post("https://graph.facebook.com/v2.6/me/messages",
             params={"access_token": token},
             data=json.dumps({
                 "recipient": {"id": recipient},
                 "message": {"text": payload,
-                            "quick_replies":quick_replies_list}
+                            "quick_replies": quick_replies_list}
             }),
             headers={'Content-type': 'application/json'})
-    
+        
     elif subreddit_name == "Jokes":
+
         for submission in reddit.subreddit(subreddit_name).hot(limit=None):
-            if ((submission.is_self == True) and ( submission.link_flair_text is None)):
-                query_result = Posts.query.filter(Posts.name == submission.id).first()
+            if ((submission.is_self == True) and (submission.link_flair_text is None)):
+                query_result = (
+                    Posts.query.filter(Posts.name == submission.id).first()
+                )
                 if query_result is None:
                     myPost = Posts(submission.id, submission.title)
                     myUser.posts.append(myPost)
@@ -129,30 +138,38 @@ def send_message(token, recipient, text):
                     payload_text = submission.selftext
                     break
                 else:
-                    continue  
+                    continue
 
         r = requests.post("https://graph.facebook.com/v2.6/me/messages",
             params={"access_token": token},
             data=json.dumps({
                 "recipient": {"id": recipient},
-                "message": {"text": payload}
+                "message": {"text": payload,
+                            "quick_replies": quick_replies_list}
             }),
             headers={'Content-type': 'application/json'})
-
+        
         r = requests.post("https://graph.facebook.com/v2.6/me/messages",
             params={"access_token": token},
             data=json.dumps({
                 "recipient": {"id": recipient},
                 "message": {"text": payload_text,
                             "quick_replies":quick_replies_list}
+                #"message": {"text": text.decode('unicode_escape')}
             }),
             headers={'Content-type': 'application/json'})
-        
+    
     else:
         payload = "http://imgur.com/WeyNGtQ.jpg"
         for submission in reddit.subreddit(subreddit_name).hot(limit=None):
-            if (submission.link_flair_css_class == 'image') or ((submission.is_self != True) and ((".jpg" in submission.url) or (".png" in submission.url))):
-                query_result = Posts.query.filter(Posts.name == submission.id).first()
+            if ((submission.link_flair_css_class == 'image') or 
+                ((submission.is_self != True) and 
+                    ((".jpg" in submission.url) or 
+                        (".png" in submission.url)))):
+                query_result = (
+                    Posts.query
+                    .filter(Posts.name == submission.id).first()
+                )
                 if query_result is None:
                     myPost = Posts(submission.id, submission.url)
                     myUser.posts.append(myPost)
@@ -167,19 +184,21 @@ def send_message(token, recipient, text):
                 else:
                     continue
 
-        r = requests.post("https://graph.facebook.com/v2.6/me/messages",
-            params={"access_token": token},
-            data=json.dumps({
-                "recipient": {"id": recipient},
-                "message": {"attachment": {
-                              "type": "image",
-                              "payload": {
-                                "url": payload
-                              }},
-                              "quick_replies":quick_replies_list}
-            }),
-            headers={'Content-type': 'application/json'})
+        print("Payload: ", payload)
 
+        r = requests.post("https://graph.facebook.com/v2.6/me/messages",
+                          params={"access_token": token},
+                          data=json.dumps({
+                              "recipient": {"id": recipient},
+                              "message": {"attachment": {
+                                  "type": "image",
+                                  "payload": {
+                                      "url": payload
+                                  }},
+                                  "quick_replies":quick_replies_list}
+                          }),
+                          headers={'Content-type': 'application/json'})
+    
     if r.status_code != requests.codes.ok:
         print(r.text)
 
@@ -192,28 +211,29 @@ def get_or_create(session, model, **kwargs):
         session.add(instance)
         session.commit()
         return instance
+    
+relationship_table = db.Table('relationship_table',
+                              db.Column('user_id',db.Integer,db.ForeignKey('users.id'), nullable=False),
+                              db.Column('post_id', db.Integer,db.ForeignKey('posts.id'), nullable=False),
+                              db.PrimaryKeyConstraint('user_id','post_id'))
 
-relationship_table=db.Table('relationship_table',                            
-    db.Column('user_id', db.Integer,db.ForeignKey('users.id'), nullable=False),
-    db.Column('post_id',db.Integer,db.ForeignKey('posts.id'),nullable=False),
-    db.PrimaryKeyConstraint('user_id', 'post_id') )
- 
 class Users(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(255),nullable=False)
-    posts=db.relationship('Posts', secondary=relationship_table, backref='users' )  
+    name = db.Column(db.String(255), nullable=False)
+    posts = db.relationship('Posts', secondary=relationship_table, backref='users')
 
     def __init__(self, name=None):
         self.name = name
- 
+
 class Posts(db.Model):
-    id=db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True)
     name=db.Column(db.String, unique=True, nullable=False)
-    url=db.Column(db.String, nullable=False)
+    url = db.Column(db.String, nullable=False)
 
     def __init__(self, name=None, url=None):
         self.name = name
         self.url = url
 
 if __name__ == '__main__':
-    app.run()
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
